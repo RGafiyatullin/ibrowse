@@ -82,6 +82,12 @@
          send_req/4,
          send_req/5,
          send_req/6,
+
+         send_req_via_lb/4,
+         send_req_via_lb/5,
+         send_req_via_lb/6,
+         send_req_via_lb/7,
+
          send_req_direct/4,
          send_req_direct/5,
          send_req_direct/6,
@@ -337,6 +343,36 @@ send_req(Url, Headers, Method, Body, Options, Timeout) ->
         Err ->
             {error, {url_parsing_failed, Err}}
     end.
+
+
+send_req_via_lb( Lb, Url, Headers, Method ) ->
+    send_req_via_lb( Lb, Url, Headers, Method, [] ).
+
+send_req_via_lb( Lb, Url, Headers, Method, Body ) ->
+    send_req_via_lb( Lb, Url, Headers, Method, Body, []).
+
+send_req_via_lb( Lb, Url, Headers, Method, Body, Options) ->
+    send_req_via_lb( Lb, Url, Headers, Method, Body, Options, 30000).
+
+send_req_via_lb( {Lb_pid, Max_sessions, Max_pipeline_size}, Url, Headers, Method, Body, Options, Timeout ) ->
+    case catch parse_url( Url ) of
+        Parsed_url = #url{ host = Host, port = Port, protocol = Protocol } ->
+            Options_1 = merge_options(Host, Port, Options),
+            {SSLOptions, IsSSL} =
+                case (Protocol == https) orelse
+                    get_value(is_ssl, Options_1, false) of
+                    false -> {[], false};
+                    true -> {get_value(ssl_options, Options_1, []), true}
+                end,
+            try_routing_request(
+                Lb_pid, Parsed_url,
+                Max_sessions, Max_pipeline_size,
+                {SSLOptions, IsSSL}, Headers,
+                Method, Body, Options_1, Timeout, 0 );
+        Err ->
+            {error, {url_parsing_failed, Err}}
+    end.
+
 
 try_routing_request(Lb_pid, Parsed_url,
                     Max_sessions, 
