@@ -232,11 +232,15 @@ proplists_get_mandatory_value( Key, Props ) ->
 	end.
 
 -spec pd_pipeline_store( #pipeline{} ) -> ok.
-pd_pipeline_store( Pipeline = #pipeline{ name = PName, lb_pid = LbPid } ) ->
+pd_pipeline_store( Pipeline = #pipeline{ name = PName, lb_pid = LbPid, spec = #pipeline_spec{} } ) when is_pid( LbPid ) ->
 	MonRef = erlang:monitor( process, LbPid ),
 	undefined = erlang:put(
 		pipeline_key( PName ),
 		Pipeline #pipeline{ lb_mon_ref = MonRef } ),
+	ok;
+pd_pipeline_store( Pipeline = #pipeline{ name = PName, spec = #pipeline_redirect_spec{} } ) ->
+	undefined = erlang:put(
+		pipeline_key( PName ), Pipeline ),
 	ok.
 
 -spec pd_pipeline_erase( PName :: pipe_name() ) -> ok.
@@ -279,6 +283,27 @@ set_pl_create_redirect( PLSpec = #pipeline_redirect_spec{}, State = #s{ sup = Su
 	ok = pd_pipeline_store( P ),
 	{reply, {ok, created}, State #s{ pipelines = [ P | Pipelines ] }}.
 
-set_pl_replace_real_with_redirect( _PLSpec = #pipeline_redirect_spec{ name = _PName }, _P, State ) -> {reply, {error, not_implemented}, State}.
-set_pl_replace_redirect_with_real( _PLSpec = #pipeline_spec{ name = _PName }, _P, State ) -> {reply, {error, not_implemented}, State}.
+set_pl_replace_real_with_redirect(
+		PLSpec = #pipeline_redirect_spec{ name = PName },
+		P0 = #pipeline{ lb_pid = LbPid, lb_mon_ref = LbMonRef },
+		State = #s{ sup = Sup, pipelines = Pipelines0 }
+	) ->
+		_ = erlang:demonitor( LbMonRef, [flush] ),
+		_ = supervisor:terminate_child( Sup, LbPid ),
+		P1 = P0 #pipeline{ lb_pid = undefined, lb_mon_ref = undefined, spec = PLSpec },
+		ok = pd_pipeline_erase( PName ),
+		ok = pd_pipeline_store( P1 ),
+		Pipelines1 = lists:keyreplace( PName, #pipeline.name, Pipelines0, P1 ),
+		{reply, {ok, updated}, State #s{ pipelines = Pipelines1 } }.
+
+set_pl_replace_redirect_with_real(
+		PLSpec = #pipeline_spec{ name = PName }, 
+		_P0 = #pipeline{},
+		State = #s{ sup = Sup, pipelines = Pipelines0 }
+	) ->
+		P1 = (init_pipeline_fun(Sup)) ( PLSpec ),
+		ok = pd_pipeline_erase( PName ),
+		ok = pd_pipeline_store( P1 ),
+		Pipelines1 = lists:keyreplace( PName, #pipeline.name, Pipelines0, P1 ),
+		{reply, {ok, updated}, State #s{ pipelines = Pipelines1 }}.
 
