@@ -201,13 +201,16 @@ handle_info(
 			case Reason of
 				shutdown -> {noreply, State #s{ pipelines = Pipelines1 }};
 				{shutdown, _} -> {noreply, State #s{ pipelines = Pipelines1 }};
-				normal -> {noreply, State #s{ pipelines = Pipelines1 }};
 				_ ->
-					error_logger:warning_report([
-						?MODULE, handle_info_down,
-						pipeline_lb_dead,
-						{reason, Reason}, {pid, LbPid},
-						respawning ]),
+					case Reason of
+						normal -> ok;
+						_ ->
+							error_logger:warning_report([
+								?MODULE, handle_info_down,
+								pipeline_lb_dead,
+								{reason, Reason}, {pid, LbPid},
+								respawning ])
+					end,
 					RespawnedPipeline = (init_pipeline_fun( Sup ))( PSpec ),
 					ok = pd_pipeline_store( RespawnedPipeline ),
 					Pipelines2 = [ RespawnedPipeline | Pipelines1 ],
