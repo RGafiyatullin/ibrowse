@@ -201,6 +201,7 @@ handle_info(
 			case Reason of
 				shutdown -> {noreply, State #s{ pipelines = Pipelines1 }};
 				{shutdown, _} -> {noreply, State #s{ pipelines = Pipelines1 }};
+				normal -> {noreply, State #s{ pipelines = Pipelines1 }};
 				_ ->
 					error_logger:warning_report([
 						?MODULE, handle_info_down,
